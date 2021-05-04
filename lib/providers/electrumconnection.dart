@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:package_info/package_info.dart';
+import 'package:peercoin/models/availablecoins.dart';
 import 'package:peercoin/providers/activewallets.dart';
+import 'package:peercoin/providers/servers.dart';
 import 'package:web_socket_channel/io.dart';
 
 //connectionState schema
@@ -11,44 +13,46 @@ import 'package:web_socket_channel/io.dart';
 //"online"
 
 class ElectrumConnection with ChangeNotifier {
-  static const Map<String, List> _seeds = {
-    "peercoin": [
-      "wss://electrum.peercoinexplorer.net:50004",
-      "wss://allingas.peercoinexplorer.net:50004",
-    ],
-    "peercoinTestnet": [
-      "wss://testnet-electrum.peercoinexplorer.net:50004",
-    ]
-  };
-
   static const Map<String, double> _requiredProtocol = {
     "peercoin": 1.4,
     "peercoinTestnet": 1.4
   };
 
   Timer _pingTimer;
+  Timer _reconnectTimer;
   IOWebSocketChannel _connection;
   String _connectionState;
   ActiveWallets _activeWallets;
+  Servers _servers;
   Map _addresses = {};
   Map<String, List> _paperWalletUtxos = {};
   String _coinName;
   int _latestBlock;
+  String _serverUrl;
   bool _closedIntentionally = false;
   bool _scanMode = false;
   int _connectionAttempt = 0;
+  List _availableServers;
 
-  ElectrumConnection(this._activeWallets);
+  ElectrumConnection(this._activeWallets, this._servers);
 
-  Future<bool> init(walletName, [bool scanMode = false]) async {
+  Future<bool> init(
+    walletName, {
+    bool scanMode = false,
+    bool requestedFromWalletHome = false,
+  }) async {
     if (_connection == null) {
       _coinName = walletName;
       _connectionState = "waiting";
-      _closedIntentionally = false;
       _scanMode = scanMode;
       print("init server connection");
-      await connect(_connectionAttempt);
+      await _servers.init(walletName);
+      await connect();
       Stream stream = _connection.stream;
+
+      if (requestedFromWalletHome == true) {
+        _closedIntentionally = false;
+      }
 
       stream.listen((elem) {
         replyHandler(elem);
@@ -61,25 +65,28 @@ class ElectrumConnection with ChangeNotifier {
       });
       tryHandShake();
       startPingTimer();
+
       return true;
     }
     return false;
   }
 
-  Future<void> connect(_attempt) async {
-    //TODO check if we have servers in list
-    //no ? try seed
-    print(_attempt);
-
-    if (_attempt > _seeds.length) {
+  Future<void> connect() async {
+    print("connection attempt $_connectionAttempt");
+    //get server list from server provider
+    _availableServers = await _servers.getServerList(_coinName);
+    //reset attempt if attempt pointer is outside list
+    if (_connectionAttempt > _availableServers.length - 1) {
       _connectionAttempt = 0;
     }
 
-    String initialUrl = _seeds[_coinName][_connectionAttempt];
-    print(initialUrl);
+    _serverUrl = _availableServers[_connectionAttempt];
+    print("connecting to $_serverUrl");
+
+    _connectionAttempt++;
     try {
       _connection = IOWebSocketChannel.connect(
-        initialUrl,
+        _serverUrl,
       );
     } catch (e) {
       print("connection error: $e");
@@ -112,11 +119,15 @@ class ElectrumConnection with ChangeNotifier {
     return _paperWalletUtxos;
   }
 
-  void closeConnection([bool _closedIntentionally = true]) {
+  Future<void> closeConnection([bool _intentional = true]) async {
     if (_connection != null && _connection.sink != null) {
-      _closedIntentionally = _closedIntentionally;
+      _closedIntentionally = _intentional;
+      await _connection.sink.close();
+    }
+    if (_intentional) {
+      _closedIntentionally = true;
       _connectionAttempt = 0;
-      _connection.sink.close();
+      if (_reconnectTimer != null) _reconnectTimer.cancel();
     }
   }
 
@@ -127,7 +138,7 @@ class ElectrumConnection with ChangeNotifier {
   void cleanUpOnDone() {
     _pingTimer.cancel();
     _pingTimer = null;
-    connectionState = "waiting";
+    connectionState = "waiting"; //setter!
     _connection = null;
     _addresses = {};
     _latestBlock = null;
@@ -135,7 +146,7 @@ class ElectrumConnection with ChangeNotifier {
     _paperWalletUtxos = {};
 
     if (_closedIntentionally == false)
-      Timer(Duration(seconds: 5),
+      _reconnectTimer = Timer(Duration(seconds: 5),
           () => init(_coinName)); //retry if not intentional
   }
 
@@ -149,7 +160,7 @@ class ElectrumConnection with ChangeNotifier {
     if (decoded["id"] != null) {
       print("replyhandler $idString");
       if (idString == "version") {
-        handleHandShake(result);
+        handleVersion(result);
       } else if (idString.startsWith("history_")) {
         handleHistory(result);
       } else if (idString.startsWith("tx_")) {
@@ -164,6 +175,8 @@ class ElectrumConnection with ChangeNotifier {
         handleBlock(result["height"]);
       } else if (_addresses[idString] != null) {
         handleAddressStatus(id, result);
+      } else if (idString == "features") {
+        handleFeatures(result);
       }
     } else if (decoded["params"] != null) {
       switch (decoded["method"]) {
@@ -195,18 +208,28 @@ class ElectrumConnection with ChangeNotifier {
       "version",
       ["${packageInfo.appName}-flutter-${packageInfo.version}"],
     );
+    sendMessage("server.features", "features");
   }
 
-  void handleHandShake(List result) {
+  void handleVersion(List result) {
     double version = double.parse(result.elementAt(result.length - 1));
     if (version < _requiredProtocol[_coinName]) {
       //protocol version too low!
       closeConnection(false);
-    } else {
-      //we're connected and version handshake is successful
+    }
+  }
+
+  void handleFeatures(Map result) {
+    if (result["genesis_hash"] ==
+        AvailableCoins().getSpecificCoin(_coinName).genesisHash) {
+      //we're connected and genesis handshake is successful
       connectionState = "connected";
       //subscribe to block headers
       sendMessage("blockchain.headers.subscribe", "blocks");
+    } else {
+      //wrong genesis!
+      print("wrong genesis! disconnecting.");
+      closeConnection(false);
     }
   }
 
@@ -331,5 +354,11 @@ class ElectrumConnection with ChangeNotifier {
     if (txId != "import") {
       _activeWallets.updateBroadcasted(_coinName, txId, true);
     }
+    //TODO error handling if server rejects tx
+  }
+
+  String get connectedServerUrl {
+    if (_connectionState == "connected") return _serverUrl;
+    return "";
   }
 }

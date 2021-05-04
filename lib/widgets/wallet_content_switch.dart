@@ -8,13 +8,16 @@ class WalletContentSwitch extends StatelessWidget {
   final int pageIndex;
   final List<WalletTransaction> walletTransactions;
   final String unusedAddress;
+  final String identifier;
   final Function changeIndex;
 
-  WalletContentSwitch(
-      {this.pageIndex,
-      this.walletTransactions,
-      this.unusedAddress,
-      this.changeIndex});
+  WalletContentSwitch({
+    this.pageIndex,
+    this.walletTransactions,
+    this.unusedAddress,
+    this.changeIndex,
+    this.identifier,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -23,10 +26,18 @@ class WalletContentSwitch extends StatelessWidget {
         return Expanded(
             child: SingleChildScrollView(child: ReceiveTab(unusedAddress)));
       case 1:
-        return TransactionList(walletTransactions);
+        return TransactionList(
+          walletTransactions != null ? walletTransactions : [],
+          identifier,
+        );
       case 2:
         return Expanded(
-            child: SingleChildScrollView(child: SendTab(changeIndex)));
+          child: SingleChildScrollView(
+            child: SendTab(
+              changeIndex,
+            ),
+          ),
+        );
       default:
         return Container();
     }
