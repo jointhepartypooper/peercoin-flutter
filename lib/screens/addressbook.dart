@@ -41,10 +41,12 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
 
   AppBar buildAppBar(BuildContext context) {
     return AppBar(
-      title: FittedBox(
-        child: Text(
-          AppLocalizations.instance
-              .translate('addressbook_title', {"coin": _walletTitle}),
+      title: Center(
+        child: FittedBox(
+          child: Text(
+            AppLocalizations.instance
+                .translate('addressbook_title', {"coin": _walletTitle}),
+          ),
         ),
       ),
       actions: [
@@ -258,6 +260,9 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: Theme.of(context).primaryColor,
         fixedColor: Colors.white,
+        unselectedLabelStyle: TextStyle(
+          letterSpacing: 1.4,
+        ),
         onTap: (index) => changeIndex(index),
         currentIndex: _pageIndex,
         items: [
@@ -283,6 +288,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
               itemBuilder: (ctx, i) {
                 return Card(
                   child: Slidable(
+                    key: Key(_filteredAddr[i].address),
                     actionPane: SlidableScrollActionPane(),
                     secondaryActions: <Widget>[
                       IconSlideAction(
