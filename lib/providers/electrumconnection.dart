@@ -33,6 +33,10 @@ class ElectrumConnection with ChangeNotifier {
   int _connectionAttempt = 0;
   List _availableServers;
   StreamSubscription _offlineSubscription;
+  int _depthPointer = 1;
+  int _maxChainDepth = 5;
+  int _maxAddressDepth = 5;
+  Map<String, int> _queryDepth = {'account': 0, 'chain': 0, 'address': 0};
 
   ElectrumConnection(this._activeWallets, this._servers);
 
@@ -167,6 +171,10 @@ class ElectrumConnection with ChangeNotifier {
     _latestBlock = null;
     _scanMode = false;
     _paperWalletUtxos = {};
+    _queryDepth = {'account': 0, 'chain': 0, 'address': 0};
+    _maxChainDepth = 5;
+    _maxAddressDepth = 5;
+    _depthPointer = 1;
 
     if (_closedIntentionally == false) {
       _reconnectTimer = Timer(Duration(seconds: 5),
@@ -277,6 +285,53 @@ class ElectrumConnection with ChangeNotifier {
       print('status changed! $oldStatus, $newStatus');
       //handle the status update
       handleScriptHashSubscribeNotification(hash.value, newStatus);
+    }
+    if (_scanMode == true) {
+      if (newStatus == null) {
+        subscribeNextDerivatedAddress();
+      } else {
+        //increase depth because we found one != null
+        if (_depthPointer == 1) {
+          //chain pointer
+          _maxChainDepth++;
+        } else if (_depthPointer == 2) {
+          //address pointer
+          _maxAddressDepth++;
+        }
+        print('writing $address to wallet');
+        //saving to wallet
+        _activeWallets.addAddressFromScan(_coinName, address);
+        //try next
+        subscribeNextDerivatedAddress();
+      }
+    }
+  }
+
+  void subscribeNextDerivatedAddress() async {
+    var currentPointer = _queryDepth.keys.toList()[_depthPointer];
+
+    if (_depthPointer == 1 && _queryDepth[currentPointer] < _maxChainDepth ||
+        _depthPointer == 2 && _queryDepth[currentPointer] < _maxAddressDepth) {
+      print(_queryDepth);
+
+      var _nextAddr = await _activeWallets.getAddressFromDerivationPath(
+        _coinName,
+        _queryDepth['account'],
+        _queryDepth['chain'],
+        _queryDepth['address'],
+      );
+
+      print(_nextAddr);
+
+      subscribeToScriptHashes(
+        await _activeWallets.getWalletScriptHashes(_coinName, _nextAddr),
+      );
+      _queryDepth[currentPointer]++;
+    } else if (_depthPointer < _queryDepth.keys.length - 1) {
+      print('move pointer');
+      _queryDepth[currentPointer] = 0;
+      _depthPointer++;
+      subscribeNextDerivatedAddress();
     }
   }
 

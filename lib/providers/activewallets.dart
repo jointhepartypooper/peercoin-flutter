@@ -83,6 +83,25 @@ class ActiveWallets with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<String> getAddressFromDerivationPath(
+      String identifier, int account, int chain, int address,
+      [master = false]) async {
+    final network = AvailableCoins().getSpecificCoin(identifier).networkType;
+    var hdWallet = HDWallet.fromSeed(
+      seedPhraseUint8List(await seedPhrase),
+      network: network,
+    );
+
+    if (master == true) {
+      return hdWallet.address;
+    } else {
+      var derivePath = "m/$account'/$chain/$address";
+      print(derivePath);
+
+      return hdWallet.derivePath(derivePath).address;
+    }
+  }
+
   Future<void> generateUnusedAddress(String identifier) async {
     var openWallet = getSpecificCoinWallet(identifier);
     final network = AvailableCoins().getSpecificCoin(identifier).networkType;
@@ -116,7 +135,7 @@ class ActiveWallets with ChangeNotifier {
         var numberOfOurAddr = openWallet.addresses
             .where((element) => element.isOurs == true)
             .length;
-        var derivePath = "m/0'/$numberOfOurAddr/0";
+        var derivePath = "m/0'/0/$numberOfOurAddr";
         var newAddress = hdWallet.derivePath(derivePath).address;
 
         final res = openWallet.addresses.firstWhere(
@@ -124,8 +143,9 @@ class ActiveWallets with ChangeNotifier {
             orElse: () => null);
 
         if (res != null) {
+          //next addr in derivePath is already used for some reason
           numberOfOurAddr++;
-          derivePath = "m/0'/$numberOfOurAddr/0";
+          derivePath = "m/0'/0/$numberOfOurAddr";
           newAddress = hdWallet.derivePath(derivePath).address;
         }
 
@@ -160,7 +180,7 @@ class ActiveWallets with ChangeNotifier {
     var targetWallet = addresses.firstWhere(
         (element) => element.address == address,
         orElse: () => null);
-    return targetWallet.status;
+    return targetWallet?.status;
   }
 
   Future<List> getUnkownTxFromList(String identifier, List newTxList) async {
@@ -551,6 +571,25 @@ class ActiveWallets with ChangeNotifier {
 
     openWallet.save();
     notifyListeners();
+  }
+
+  void addAddressFromScan(String identifier, String address) {
+    var openWallet = getSpecificCoinWallet(identifier);
+    var addr = openWallet.addresses.firstWhere(
+      (element) => element.address == address,
+      orElse: () => null,
+    );
+    if (addr == null) {
+      openWallet.addNewAddress = WalletAddress(
+        address: address,
+        addressBookName: null,
+        used: true,
+        status: null,
+        isOurs: true,
+      );
+    }
+
+    openWallet.save();
   }
 
   void removeAddress(String identifier, WalletAddress addr) {
