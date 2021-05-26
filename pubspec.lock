@@ -35,14 +35,16 @@ packages:
       name: async
       url: "https://pub.dartlang.org"
     source: hosted
-    version: "2.5.0"
+    version: "2.6.1"
   bech32:
     dependency: transitive
     description:
-      name: bech32
-      url: "https://pub.dartlang.org"
-    source: hosted
-    version: "0.1.2"
+      path: "."
+      ref: HEAD
+      resolved-ref: "3216ee1cec2f98b92d10eb1437c21812b0f12d87"
+      url: "https://github.com/saeveritt/bech32.git"
+    source: git
+    version: "0.2.0"
   bip32:
     dependency: transitive
     description:
@@ -60,9 +62,11 @@ packages:
   bitcoin_flutter:
     dependency: "direct main"
     description:
-      path: "../bitcoin_flutter"
-      relative: true
-    source: path
+      path: "."
+      ref: HEAD
+      resolved-ref: aa968adc9aacca7cc6fde1b888493995c2d64b4e
+      url: "https://github.com/peercoin/bitcoin_flutter.git"
+    source: git
     version: "2.0.2"
   boolean_selector:
     dependency: transitive
@@ -746,7 +750,7 @@ packages:
       name: source_span
       url: "https://pub.dartlang.org"
     source: hosted
-    version: "1.8.0"
+    version: "1.8.1"
   stack_trace:
     dependency: transitive
     description:
@@ -795,7 +799,7 @@ packages:
       name: test_api
       url: "https://pub.dartlang.org"
     source: hosted
-    version: "0.2.19"
+    version: "0.3.0"
   time:
     dependency: transitive
     description:
